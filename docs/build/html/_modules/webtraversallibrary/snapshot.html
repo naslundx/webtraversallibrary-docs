@@ -1,0 +1,346 @@
+
+<!DOCTYPE html>
+
+<html xmlns="http://www.w3.org/1999/xhtml">
+  <head>
+    <meta charset="utf-8" />
+    <title>webtraversallibrary.snapshot &#8212; Web Traversal Framework  documentation</title>
+    <link rel="stylesheet" href="../../_static/haiku.css" type="text/css" />
+    <link rel="stylesheet" href="../../_static/pygments.css" type="text/css" />
+    <script type="text/javascript" id="documentation_options" data-url_root="../../" src="../../_static/documentation_options.js"></script>
+    <script type="text/javascript" src="../../_static/jquery.js"></script>
+    <script type="text/javascript" src="../../_static/underscore.js"></script>
+    <script type="text/javascript" src="../../_static/doctools.js"></script>
+    <script type="text/javascript" src="../../_static/language_data.js"></script>
+    <link rel="index" title="Index" href="../../genindex.html" />
+    <link rel="search" title="Search" href="../../search.html" /> 
+  </head><body>
+      <div class="header" role="banner"><h1 class="heading"><a href="../../index.html">
+          <span>Web Traversal Framework  documentation</span></a></h1>
+        <h2 class="heading"><span>webtraversallibrary.snapshot</span></h2>
+      </div>
+      <div class="topnav" role="navigation" aria-label="top navigation">
+      
+        <p>
+        <a class="uplink" href="../../index.html">Contents</a>
+        </p>
+
+      </div>
+      <div class="content">
+        
+        
+  <h1>Source code for webtraversallibrary.snapshot</h1><div class="highlight"><pre>
+<span></span><span class="c1"># Licensed to the Apache Software Foundation (ASF) under one</span>
+<span class="c1"># or more contributor license agreements.  See the NOTICE file</span>
+<span class="c1"># distributed with this work for additional information</span>
+<span class="c1"># regarding copyright ownership.  The ASF licenses this file</span>
+<span class="c1"># to you under the Apache License, Version 2.0 (the</span>
+<span class="c1"># &quot;License&quot;); you may not use this file except in compliance</span>
+<span class="c1"># with the License.  You may obtain a copy of the License at</span>
+
+<span class="c1">#   http://www.apache.org/licenses/LICENSE-2.0</span>
+
+<span class="c1"># Unless required by applicable law or agreed to in writing,</span>
+<span class="c1"># software distributed under the License is distributed on an</span>
+<span class="c1"># &quot;AS IS&quot; BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY</span>
+<span class="c1"># KIND, either express or implied.  See the License for the</span>
+<span class="c1"># specific language governing permissions and limitations</span>
+<span class="c1"># under the License.</span>
+
+<span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">Static snapshot of a web page. Contains source, screenshots, element images, and metadata.</span>
+<span class="sd">&quot;&quot;&quot;</span>
+<span class="kn">from</span> <span class="nn">__future__</span> <span class="kn">import</span> <span class="n">annotations</span>
+
+<span class="kn">import</span> <span class="nn">json</span>
+<span class="kn">import</span> <span class="nn">logging</span>
+<span class="kn">import</span> <span class="nn">os</span>
+<span class="kn">import</span> <span class="nn">re</span>
+<span class="kn">from</span> <span class="nn">dataclasses</span> <span class="kn">import</span> <span class="n">dataclass</span><span class="p">,</span> <span class="n">field</span>
+<span class="kn">from</span> <span class="nn">pathlib</span> <span class="kn">import</span> <span class="n">Path</span>
+<span class="kn">from</span> <span class="nn">typing</span> <span class="kn">import</span> <span class="n">Dict</span><span class="p">,</span> <span class="n">Iterable</span><span class="p">,</span> <span class="n">List</span><span class="p">,</span> <span class="n">Optional</span><span class="p">,</span> <span class="n">Union</span>
+
+<span class="kn">import</span> <span class="nn">bs4</span>
+<span class="kn">from</span> <span class="nn">PIL</span> <span class="kn">import</span> <span class="n">Image</span>
+
+<span class="kn">from</span> <span class="nn">.config</span> <span class="kn">import</span> <span class="n">Config</span>
+<span class="kn">from</span> <span class="nn">.error</span> <span class="kn">import</span> <span class="n">ScrapingError</span>
+<span class="kn">from</span> <span class="nn">.geometry</span> <span class="kn">import</span> <span class="n">Point</span><span class="p">,</span> <span class="n">Rectangle</span>
+<span class="kn">from</span> <span class="nn">.graphics</span> <span class="kn">import</span> <span class="n">take_element_screenshot</span>
+<span class="kn">from</span> <span class="nn">.processtools</span> <span class="kn">import</span> <span class="n">cached_property</span>
+<span class="kn">from</span> <span class="nn">.screenshot</span> <span class="kn">import</span> <span class="n">Screenshot</span>
+<span class="kn">from</span> <span class="nn">.selector</span> <span class="kn">import</span> <span class="n">Selector</span>
+
+<span class="n">logger</span> <span class="o">=</span> <span class="n">logging</span><span class="o">.</span><span class="n">getLogger</span><span class="p">(</span><span class="s2">&quot;wtl&quot;</span><span class="p">)</span>
+
+<span class="c1"># Pylint doesn&#39;t understand dataclasses just yet</span>
+<span class="c1"># pylint: disable=no-member, unsubscriptable-object, unsupported-assignment-operation</span>
+
+
+<div class="viewcode-block" id="PageElement"><a class="viewcode-back" href="../../webtraversallibrary.html#webtraversallibrary.snapshot.PageElement">[docs]</a><span class="nd">@dataclass</span><span class="p">(</span><span class="n">frozen</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+<span class="k">class</span> <span class="nc">PageElement</span><span class="p">:</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Represents an element with associated and structured `metadata` on a given `page`.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="n">page</span><span class="p">:</span> <span class="s2">&quot;PageSnapshot&quot;</span> <span class="o">=</span> <span class="n">field</span><span class="p">(</span><span class="nb">repr</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+    <span class="n">metadata</span><span class="p">:</span> <span class="nb">dict</span> <span class="o">=</span> <span class="n">field</span><span class="p">(</span><span class="nb">repr</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span> <span class="nf">raw_scores</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">float</span><span class="p">]:</span>
+        <span class="sd">&quot;&quot;&quot;Returns all raw classifier scores.&quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="s2">&quot;raw_scores&quot;</span> <span class="ow">not</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">metadata</span><span class="p">:</span>  <span class="c1"># pylint: disable=unsupported-membership-test</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">metadata</span><span class="p">[</span><span class="s2">&quot;raw_scores&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">metadata</span><span class="p">[</span><span class="s2">&quot;raw_scores&quot;</span><span class="p">]</span>
+
+    <span class="nd">@cached_property</span>
+    <span class="k">def</span> <span class="nf">tag</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">bs4</span><span class="o">.</span><span class="n">Tag</span><span class="p">:</span>
+        <span class="sd">&quot;&quot;&quot;Returns the bs4.Tag associated with this PageElement&quot;&quot;&quot;</span>
+        <span class="n">tag</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">page</span><span class="o">.</span><span class="n">page_source</span><span class="o">.</span><span class="n">find</span><span class="p">(</span><span class="n">attrs</span><span class="o">=</span><span class="p">{</span><span class="s2">&quot;wtl-uid&quot;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">wtl_uid</span><span class="p">})</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">tag</span><span class="p">:</span>
+            <span class="n">logger</span><span class="o">.</span><span class="n">warning</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;No bs4.tag with wtl-uid=</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">wtl_uid</span><span class="si">}</span><span class="s2">!&quot;</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">tag</span>
+
+    <span class="nd">@cached_property</span>
+    <span class="k">def</span> <span class="nf">wtl_uid</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">int</span><span class="p">:</span>
+        <span class="sd">&quot;&quot;&quot;Returns the wtl-uid associated with this PageElement.&quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">metadata</span><span class="p">[</span><span class="s2">&quot;wtl_uid&quot;</span><span class="p">]</span>
+
+    <span class="nd">@cached_property</span>
+    <span class="k">def</span> <span class="nf">wtl_parent_uid</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">int</span><span class="p">:</span>
+        <span class="sd">&quot;&quot;&quot;Returns the wtl-uid associated with the parent of this PageElement.&quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">metadata</span><span class="p">[</span><span class="s2">&quot;wtl_parent_uid&quot;</span><span class="p">]</span>
+
+    <span class="nd">@cached_property</span>
+    <span class="k">def</span> <span class="nf">parent</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">PageElement</span><span class="p">:</span>
+        <span class="sd">&quot;&quot;&quot;Returns the parent of this PageElement.&quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">page</span><span class="o">.</span><span class="n">elements</span><span class="o">.</span><span class="n">by_uid</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">wtl_parent_uid</span><span class="p">)</span>
+
+    <span class="nd">@cached_property</span>
+    <span class="k">def</span> <span class="nf">location</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Point</span><span class="p">:</span>
+        <span class="sd">&quot;&quot;&quot;Returns the top-left position of this PageElement.&quot;&quot;&quot;</span>
+        <span class="n">location</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">metadata</span><span class="p">[</span><span class="s2">&quot;location&quot;</span><span class="p">]</span>
+        <span class="k">return</span> <span class="n">Point</span><span class="p">(</span><span class="n">location</span><span class="p">[</span><span class="s2">&quot;x&quot;</span><span class="p">],</span> <span class="n">location</span><span class="p">[</span><span class="s2">&quot;y&quot;</span><span class="p">])</span>
+
+    <span class="nd">@cached_property</span>
+    <span class="k">def</span> <span class="nf">size</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Point</span><span class="p">:</span>
+        <span class="sd">&quot;&quot;&quot;Returns the wtl-uid associated with this PageElement.&quot;&quot;&quot;</span>
+        <span class="n">size</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">metadata</span><span class="p">[</span><span class="s2">&quot;size&quot;</span><span class="p">]</span>
+        <span class="k">return</span> <span class="n">Point</span><span class="p">(</span><span class="n">size</span><span class="p">[</span><span class="s2">&quot;width&quot;</span><span class="p">],</span> <span class="n">size</span><span class="p">[</span><span class="s2">&quot;height&quot;</span><span class="p">])</span>
+
+    <span class="nd">@cached_property</span>
+    <span class="k">def</span> <span class="nf">bounds</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Rectangle</span><span class="p">:</span>
+        <span class="sd">&quot;&quot;&quot;Returns the bounding box of this PageElement.&quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="n">Rectangle</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">location</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">location</span> <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">size</span><span class="p">)</span>
+
+    <span class="nd">@cached_property</span>
+    <span class="k">def</span> <span class="nf">selector</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Selector</span><span class="p">:</span>
+        <span class="sd">&quot;&quot;&quot;CSS Selector for the element without attributes.&quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="n">Selector</span><span class="o">.</span><span class="n">build</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">page</span><span class="o">.</span><span class="n">page_source</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">wtl_uid</span><span class="p">)</span>
+
+    <span class="nd">@cached_property</span>
+    <span class="k">def</span> <span class="nf">font_size</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">float</span><span class="p">:</span>
+        <span class="sd">&quot;&quot;&quot;Returns resolved font size property in pixels.&quot;&quot;&quot;</span>
+        <span class="k">return</span> <span class="n">PageElement</span><span class="o">.</span><span class="n">parse_resolved_size</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">metadata</span><span class="p">[</span><span class="s2">&quot;font_size&quot;</span><span class="p">])</span>
+
+    <span class="nd">@cached_property</span>
+    <span class="k">def</span> <span class="nf">screenshot</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Image</span><span class="o">.</span><span class="n">Image</span><span class="p">:</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Returns element screenshot for the given element, cropped from the page screenshot.</span>
+
+<span class="sd">        .. warning::</span>
+<span class="sd">            Screenshotting must have been enabled (and run) on the page for this to work!</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">fixed_pos</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">metadata</span><span class="p">[</span><span class="s2">&quot;fixed_pos&quot;</span><span class="p">]</span>
+        <span class="n">page_screenshot</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">page</span><span class="o">.</span><span class="n">screenshots</span><span class="p">[</span><span class="s2">&quot;first&quot;</span><span class="p">]</span> <span class="k">if</span> <span class="n">fixed_pos</span> <span class="k">else</span> <span class="bp">self</span><span class="o">.</span><span class="n">page</span><span class="o">.</span><span class="n">screenshots</span><span class="p">[</span><span class="s2">&quot;full&quot;</span><span class="p">]</span>
+        <span class="k">assert</span> <span class="n">page_screenshot</span><span class="p">,</span> <span class="s2">&quot;Page screenshotting must be enabled if requesting element screenshot&quot;</span>
+
+        <span class="n">screenshot_box</span> <span class="o">=</span> <span class="n">Rectangle</span><span class="p">(</span><span class="n">Point</span><span class="o">.</span><span class="n">zero</span><span class="p">(),</span> <span class="n">page_screenshot</span><span class="o">.</span><span class="n">size</span><span class="p">)</span>
+        <span class="n">element_box</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">bounds</span>
+        <span class="n">intersection_box</span> <span class="o">=</span> <span class="n">Rectangle</span><span class="o">.</span><span class="n">intersection</span><span class="p">([</span><span class="n">screenshot_box</span><span class="p">,</span> <span class="n">element_box</span><span class="p">])</span>
+
+        <span class="k">if</span> <span class="n">intersection_box</span><span class="o">.</span><span class="n">area</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="k">return</span> <span class="kc">None</span>
+
+        <span class="k">return</span> <span class="n">take_element_screenshot</span><span class="p">(</span><span class="n">page_screenshot</span><span class="o">.</span><span class="n">image</span><span class="p">,</span> <span class="n">intersection_box</span><span class="p">)</span>
+
+<div class="viewcode-block" id="PageElement.parse_resolved_size"><a class="viewcode-back" href="../../webtraversallibrary.html#webtraversallibrary.snapshot.PageElement.parse_resolved_size">[docs]</a>    <span class="nd">@staticmethod</span>
+    <span class="k">def</span> <span class="nf">parse_resolved_size</span><span class="p">(</span><span class="n">value</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">float</span><span class="p">:</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Parse resolved CSS size value</span>
+<span class="sd">        :raises: ``ValueError`` if format not supported (currently float followed by ``px``)</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">pattern</span> <span class="o">=</span> <span class="n">re</span><span class="o">.</span><span class="n">compile</span><span class="p">(</span><span class="sa">r</span><span class="s2">&quot;\d+(.\d*)?px&quot;</span><span class="p">)</span>
+        <span class="n">value</span> <span class="o">=</span> <span class="n">value</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">pattern</span><span class="o">.</span><span class="n">fullmatch</span><span class="p">(</span><span class="n">value</span><span class="p">):</span>
+            <span class="k">raise</span> <span class="n">ScrapingError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Expected a number followed by px, got &#39;</span><span class="si">{</span><span class="n">value</span><span class="si">}</span><span class="s2">&#39;&quot;</span><span class="p">)</span>
+        <span class="k">return</span> <span class="nb">float</span><span class="p">(</span><span class="n">value</span><span class="p">[:</span><span class="o">-</span><span class="mi">2</span><span class="p">])</span></div></div>
+
+
+<div class="viewcode-block" id="Elements"><a class="viewcode-back" href="../../webtraversallibrary.html#webtraversallibrary.snapshot.Elements">[docs]</a><span class="k">class</span> <span class="nc">Elements</span><span class="p">(</span><span class="nb">list</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;Helper class for a list of elements from the same page&quot;&quot;&quot;</span>
+
+<div class="viewcode-block" id="Elements.by_score"><a class="viewcode-back" href="../../webtraversallibrary.html#webtraversallibrary.snapshot.Elements.by_score">[docs]</a>    <span class="k">def</span> <span class="nf">by_score</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">name</span><span class="p">:</span> <span class="n">Union</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Iterable</span><span class="p">[</span><span class="nb">str</span><span class="p">]],</span> <span class="n">limit</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">0.0</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Elements</span><span class="p">:</span>
+        <span class="sd">&quot;&quot;&quot;Return elements tagged with all given scores over a certain limit&quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="n">name</span> <span class="o">==</span> <span class="s2">&quot;all&quot;</span><span class="p">:</span>
+            <span class="k">return</span> <span class="bp">self</span>
+
+        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">name</span><span class="p">,</span> <span class="nb">str</span><span class="p">):</span>
+            <span class="k">return</span> <span class="n">Elements</span><span class="p">([</span><span class="n">e</span> <span class="k">for</span> <span class="n">e</span> <span class="ow">in</span> <span class="bp">self</span> <span class="k">if</span> <span class="n">name</span> <span class="ow">in</span> <span class="n">e</span><span class="o">.</span><span class="n">metadata</span> <span class="ow">and</span> <span class="n">e</span><span class="o">.</span><span class="n">metadata</span><span class="p">[</span><span class="n">name</span><span class="p">]</span> <span class="o">&gt;</span> <span class="n">limit</span><span class="p">])</span>
+
+        <span class="k">return</span> <span class="n">Elements</span><span class="p">([</span><span class="n">e</span> <span class="k">for</span> <span class="n">e</span> <span class="ow">in</span> <span class="bp">self</span> <span class="k">if</span> <span class="nb">set</span><span class="p">(</span><span class="n">name</span><span class="p">)</span> <span class="o">&lt;=</span> <span class="nb">set</span><span class="p">(</span><span class="n">e</span><span class="o">.</span><span class="n">metadata</span><span class="o">.</span><span class="n">keys</span><span class="p">())])</span></div>
+
+<div class="viewcode-block" id="Elements.by_raw_score"><a class="viewcode-back" href="../../webtraversallibrary.html#webtraversallibrary.snapshot.Elements.by_raw_score">[docs]</a>    <span class="k">def</span> <span class="nf">by_raw_score</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">name</span><span class="p">:</span> <span class="n">Union</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Iterable</span><span class="p">[</span><span class="nb">str</span><span class="p">]],</span> <span class="n">limit</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">0.0</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Elements</span><span class="p">:</span>
+        <span class="sd">&quot;&quot;&quot;Return elements tagged with all given raw scores over a certain limit&quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="n">name</span> <span class="o">==</span> <span class="s2">&quot;all&quot;</span><span class="p">:</span>
+            <span class="k">return</span> <span class="bp">self</span>
+
+        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">name</span><span class="p">,</span> <span class="nb">str</span><span class="p">):</span>
+            <span class="k">return</span> <span class="n">Elements</span><span class="p">([</span><span class="n">e</span> <span class="k">for</span> <span class="n">e</span> <span class="ow">in</span> <span class="bp">self</span> <span class="k">if</span> <span class="n">name</span> <span class="ow">in</span> <span class="n">e</span><span class="o">.</span><span class="n">raw_scores</span> <span class="ow">and</span> <span class="n">e</span><span class="o">.</span><span class="n">raw_scores</span><span class="p">[</span><span class="n">name</span><span class="p">]</span> <span class="o">&gt;</span> <span class="n">limit</span><span class="p">])</span>
+
+        <span class="k">return</span> <span class="n">Elements</span><span class="p">([</span><span class="n">e</span> <span class="k">for</span> <span class="n">e</span> <span class="ow">in</span> <span class="bp">self</span> <span class="k">if</span> <span class="nb">set</span><span class="p">(</span><span class="n">name</span><span class="p">)</span> <span class="o">&lt;=</span> <span class="nb">set</span><span class="p">(</span><span class="n">e</span><span class="o">.</span><span class="n">metadata</span><span class="o">.</span><span class="n">keys</span><span class="p">())])</span></div>
+
+<div class="viewcode-block" id="Elements.by_selector"><a class="viewcode-back" href="../../webtraversallibrary.html#webtraversallibrary.snapshot.Elements.by_selector">[docs]</a>    <span class="k">def</span> <span class="nf">by_selector</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">selector</span><span class="p">:</span> <span class="n">Selector</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Elements</span><span class="p">:</span>
+        <span class="sd">&quot;&quot;&quot;Return all elements that match a given selector&quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">Elements</span><span class="p">([])</span>
+
+        <span class="n">tags</span> <span class="o">=</span> <span class="nb">set</span><span class="p">(</span><span class="bp">self</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">page</span><span class="o">.</span><span class="n">page_source</span><span class="o">.</span><span class="n">html</span><span class="o">.</span><span class="n">select</span><span class="p">(</span><span class="n">selector</span><span class="o">.</span><span class="n">css</span><span class="p">))</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">tags</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">Elements</span><span class="p">([])</span>
+
+        <span class="n">wtl_uids</span> <span class="o">=</span> <span class="nb">set</span><span class="p">(</span><span class="nb">int</span><span class="p">(</span><span class="n">x</span><span class="o">.</span><span class="n">attrs</span><span class="p">[</span><span class="s2">&quot;wtl-uid&quot;</span><span class="p">])</span> <span class="k">for</span> <span class="n">x</span> <span class="ow">in</span> <span class="n">tags</span> <span class="k">if</span> <span class="s2">&quot;wtl-uid&quot;</span> <span class="ow">in</span> <span class="n">x</span><span class="o">.</span><span class="n">attrs</span><span class="p">)</span>
+        <span class="n">elements</span> <span class="o">=</span> <span class="n">Elements</span><span class="p">([</span><span class="n">e</span> <span class="k">for</span> <span class="n">e</span> <span class="ow">in</span> <span class="bp">self</span> <span class="k">if</span> <span class="n">e</span><span class="o">.</span><span class="n">wtl_uid</span> <span class="ow">in</span> <span class="n">wtl_uids</span><span class="p">])</span>
+
+        <span class="c1"># Falls back on BS4 tags if selector matches something that hasn&#39;t been snapshotted yet</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">elements</span><span class="p">:</span>
+            <span class="n">elements</span> <span class="o">=</span> <span class="n">Elements</span><span class="p">([</span><span class="n">e</span> <span class="k">for</span> <span class="n">e</span> <span class="ow">in</span> <span class="bp">self</span> <span class="k">if</span> <span class="n">e</span><span class="o">.</span><span class="n">tag</span> <span class="ow">in</span> <span class="n">tags</span><span class="p">])</span>
+
+        <span class="k">return</span> <span class="n">elements</span></div>
+
+<div class="viewcode-block" id="Elements.by_subtree"><a class="viewcode-back" href="../../webtraversallibrary.html#webtraversallibrary.snapshot.Elements.by_subtree">[docs]</a>    <span class="k">def</span> <span class="nf">by_subtree</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">target</span><span class="p">:</span> <span class="n">Union</span><span class="p">[</span><span class="n">Selector</span><span class="p">,</span> <span class="n">PageElement</span><span class="p">],</span> <span class="n">include_root</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Elements</span><span class="p">:</span>
+        <span class="sd">&quot;&quot;&quot;Return all elements belonging to the subtree where given element is the root&quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">Elements</span><span class="p">([])</span>
+
+        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">target</span><span class="p">,</span> <span class="n">Selector</span><span class="p">):</span>
+            <span class="n">targets</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">by_selector</span><span class="p">(</span><span class="n">target</span><span class="p">)</span>
+            <span class="k">assert</span> <span class="nb">len</span><span class="p">(</span><span class="n">targets</span><span class="p">)</span> <span class="o">==</span> <span class="mi">1</span>
+            <span class="n">target</span> <span class="o">=</span> <span class="n">targets</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+
+        <span class="k">assert</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">target</span><span class="p">,</span> <span class="n">PageElement</span><span class="p">)</span>
+        <span class="n">tags</span> <span class="o">=</span> <span class="nb">set</span><span class="p">(</span><span class="n">target</span><span class="o">.</span><span class="n">tag</span><span class="o">.</span><span class="n">descendants</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">Elements</span><span class="p">([</span><span class="n">e</span> <span class="k">for</span> <span class="n">e</span> <span class="ow">in</span> <span class="bp">self</span> <span class="k">if</span> <span class="n">e</span><span class="o">.</span><span class="n">tag</span> <span class="ow">in</span> <span class="n">tags</span><span class="p">]</span> <span class="o">+</span> <span class="p">([</span><span class="n">target</span><span class="p">]</span> <span class="k">if</span> <span class="n">include_root</span> <span class="k">else</span> <span class="p">[]))</span></div>
+
+<div class="viewcode-block" id="Elements.by_uid"><a class="viewcode-back" href="../../webtraversallibrary.html#webtraversallibrary.snapshot.Elements.by_uid">[docs]</a>    <span class="k">def</span> <span class="nf">by_uid</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">wtl_uid</span><span class="p">:</span> <span class="nb">int</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">PageElement</span><span class="p">:</span>
+        <span class="sd">&quot;&quot;&quot;Returns the element with the given wtl_uid&quot;&quot;&quot;</span>
+        <span class="k">for</span> <span class="n">e</span> <span class="ow">in</span> <span class="bp">self</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">e</span><span class="o">.</span><span class="n">wtl_uid</span> <span class="o">==</span> <span class="n">wtl_uid</span><span class="p">:</span>
+                <span class="k">return</span> <span class="n">e</span>
+        <span class="k">return</span> <span class="kc">None</span></div></div>
+
+
+<div class="viewcode-block" id="PageSnapshot"><a class="viewcode-back" href="../../webtraversallibrary.html#webtraversallibrary.snapshot.PageSnapshot">[docs]</a><span class="nd">@dataclass</span><span class="p">(</span><span class="nb">repr</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">frozen</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+<span class="k">class</span> <span class="nc">PageSnapshot</span><span class="p">:</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Static snapshot of a web page.</span>
+<span class="sd">    Contains source (DOM), screenshots, elements and metadata.</span>
+
+<span class="sd">    .. note::</span>
+<span class="sd">        Not _all_ parts of the website (separate CSS and JS files, for example) are</span>
+<span class="sd">        represented here. If that&#39;s what you need, consider storing MHTML snapshots</span>
+<span class="sd">        and manipulating them manually.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="n">page_source</span><span class="p">:</span> <span class="n">bs4</span><span class="o">.</span><span class="n">BeautifulSoup</span>
+    <span class="n">page_metadata</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">dict</span><span class="p">]</span>
+    <span class="n">elements_metadata</span><span class="p">:</span> <span class="n">List</span><span class="p">[</span><span class="nb">dict</span><span class="p">]</span>
+    <span class="n">elements</span><span class="p">:</span> <span class="n">Elements</span> <span class="o">=</span> <span class="n">field</span><span class="p">(</span><span class="n">init</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+    <span class="n">screenshots</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Screenshot</span><span class="p">]</span> <span class="o">=</span> <span class="n">field</span><span class="p">(</span><span class="n">default_factory</span><span class="o">=</span><span class="nb">dict</span><span class="p">)</span>
+    <span class="n">mhtml_source</span><span class="p">:</span> <span class="nb">bytes</span> <span class="o">=</span> <span class="kc">None</span>
+
+    <span class="k">def</span> <span class="nf">__post_init__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="n">page_elements</span> <span class="o">=</span> <span class="n">Elements</span><span class="p">([</span><span class="n">PageElement</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">metadata</span><span class="p">)</span> <span class="k">for</span> <span class="n">metadata</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">elements_metadata</span><span class="p">])</span>
+        <span class="nb">object</span><span class="o">.</span><span class="fm">__setattr__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="s2">&quot;elements&quot;</span><span class="p">,</span> <span class="n">page_elements</span><span class="p">)</span>
+
+<div class="viewcode-block" id="PageSnapshot.new_screenshot"><a class="viewcode-back" href="../../webtraversallibrary.html#webtraversallibrary.snapshot.PageSnapshot.new_screenshot">[docs]</a>    <span class="k">def</span> <span class="nf">new_screenshot</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">of</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Screenshot</span><span class="p">:</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Creates a new screenshot from a copy of a previous one.</span>
+<span class="sd">        Saves it to this snapshot and returns the new screenshot object.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">assert</span> <span class="n">of</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">screenshots</span><span class="o">.</span><span class="n">keys</span><span class="p">(),</span> <span class="s2">&quot;Creating screenshot from nonexistant original!&quot;</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">screenshots</span><span class="p">[</span><span class="n">name</span><span class="p">]</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">screenshots</span><span class="p">[</span><span class="n">of</span><span class="p">]</span><span class="o">.</span><span class="n">copy</span><span class="p">(</span><span class="n">name</span><span class="p">)</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">screenshots</span><span class="p">[</span><span class="n">name</span><span class="p">]</span></div>
+
+<div class="viewcode-block" id="PageSnapshot.load"><a class="viewcode-back" href="../../webtraversallibrary.html#webtraversallibrary.snapshot.PageSnapshot.load">[docs]</a>    <span class="nd">@classmethod</span>
+    <span class="k">def</span> <span class="nf">load</span><span class="p">(</span><span class="bp">cls</span><span class="p">,</span> <span class="n">path</span><span class="p">:</span> <span class="n">Path</span><span class="p">,</span> <span class="n">bs4_parser</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="kc">None</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">PageSnapshot</span><span class="p">:</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Returns a PageSnapshot at given path (directory) in the format</span>
+<span class="sd">        as stored in :func:`save`.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">assert</span> <span class="n">path</span><span class="o">.</span><span class="n">exists</span><span class="p">()</span>
+        <span class="n">screenshots</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Screenshot</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
+        <span class="n">mhtml_source</span><span class="p">:</span> <span class="nb">bytes</span> <span class="o">=</span> <span class="kc">None</span>
+
+        <span class="k">if</span> <span class="n">bs4_parser</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">bs4_parser</span> <span class="o">=</span> <span class="n">Config</span><span class="o">.</span><span class="n">default</span><span class="p">()</span><span class="o">.</span><span class="n">bs_html_parser</span>
+
+        <span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="n">path</span> <span class="o">/</span> <span class="s2">&quot;source.html&quot;</span><span class="p">)</span> <span class="k">as</span> <span class="n">f</span><span class="p">:</span>
+            <span class="n">page_source</span> <span class="o">=</span> <span class="n">bs4</span><span class="o">.</span><span class="n">BeautifulSoup</span><span class="p">(</span><span class="n">f</span><span class="o">.</span><span class="n">read</span><span class="p">(),</span> <span class="n">bs4_parser</span><span class="p">)</span>
+        <span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="n">path</span> <span class="o">/</span> <span class="s2">&quot;page_metadata.json&quot;</span><span class="p">)</span> <span class="k">as</span> <span class="n">f</span><span class="p">:</span>
+            <span class="n">page_metadata</span> <span class="o">=</span> <span class="n">json</span><span class="o">.</span><span class="n">load</span><span class="p">(</span><span class="n">f</span><span class="p">)</span>
+        <span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="n">path</span> <span class="o">/</span> <span class="s2">&quot;elements_metadata.json&quot;</span><span class="p">)</span> <span class="k">as</span> <span class="n">f</span><span class="p">:</span>
+            <span class="n">elements_metadata</span> <span class="o">=</span> <span class="n">json</span><span class="o">.</span><span class="n">load</span><span class="p">(</span><span class="n">f</span><span class="p">)</span>
+        <span class="k">for</span> <span class="n">f</span> <span class="ow">in</span> <span class="n">page_metadata</span><span class="p">[</span><span class="s2">&quot;screenshots&quot;</span><span class="p">]:</span>
+            <span class="n">screenshots</span><span class="p">[</span><span class="nb">str</span><span class="p">(</span><span class="n">f</span><span class="p">)]</span> <span class="o">=</span> <span class="n">Screenshot</span><span class="o">.</span><span class="n">load</span><span class="p">(</span><span class="nb">str</span><span class="p">(</span><span class="n">f</span><span class="p">),</span> <span class="n">path</span> <span class="o">/</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">f</span><span class="si">}</span><span class="s2">.png&quot;</span><span class="p">)</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="n">path</span> <span class="o">/</span> <span class="s2">&quot;page.mhtml&quot;</span><span class="p">,</span> <span class="s2">&quot;rb&quot;</span><span class="p">)</span> <span class="k">as</span> <span class="n">f</span><span class="p">:</span>  <span class="c1"># type: ignore</span>
+                <span class="n">mhtml_source</span> <span class="o">=</span> <span class="n">f</span><span class="o">.</span><span class="n">read</span><span class="p">()</span>  <span class="c1"># type: ignore</span>
+        <span class="k">except</span> <span class="ne">OSError</span><span class="p">:</span>
+            <span class="k">pass</span>
+
+        <span class="n">snapshot</span> <span class="o">=</span> <span class="n">PageSnapshot</span><span class="p">(</span>
+            <span class="n">page_source</span><span class="o">=</span><span class="n">page_source</span><span class="p">,</span>
+            <span class="n">page_metadata</span><span class="o">=</span><span class="n">page_metadata</span><span class="p">,</span>
+            <span class="n">elements_metadata</span><span class="o">=</span><span class="n">elements_metadata</span><span class="p">,</span>
+            <span class="n">screenshots</span><span class="o">=</span><span class="n">screenshots</span><span class="p">,</span>
+            <span class="n">mhtml_source</span><span class="o">=</span><span class="n">mhtml_source</span><span class="p">,</span>
+        <span class="p">)</span>
+
+        <span class="k">return</span> <span class="n">snapshot</span></div>
+
+<div class="viewcode-block" id="PageSnapshot.save"><a class="viewcode-back" href="../../webtraversallibrary.html#webtraversallibrary.snapshot.PageSnapshot.save">[docs]</a>    <span class="k">def</span> <span class="nf">save</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">path</span><span class="p">:</span> <span class="n">Path</span><span class="p">):</span>
+        <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">        Saves the current PageSnapshot instance to a folder.</span>
+<span class="sd">        The number of files depends on whether screenshots were taken or not.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">os</span><span class="o">.</span><span class="n">makedirs</span><span class="p">(</span><span class="n">path</span><span class="p">,</span> <span class="n">exist_ok</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+
+        <span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="n">path</span> <span class="o">/</span> <span class="s2">&quot;source.html&quot;</span><span class="p">,</span> <span class="s2">&quot;w&quot;</span><span class="p">)</span> <span class="k">as</span> <span class="n">f</span><span class="p">:</span>
+            <span class="n">f</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="nb">str</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">page_source</span><span class="p">))</span>
+        <span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="n">path</span> <span class="o">/</span> <span class="s2">&quot;page_metadata.json&quot;</span><span class="p">,</span> <span class="s2">&quot;w&quot;</span><span class="p">)</span> <span class="k">as</span> <span class="n">f</span><span class="p">:</span>
+            <span class="n">json</span><span class="o">.</span><span class="n">dump</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">page_metadata</span><span class="p">,</span> <span class="n">f</span><span class="p">)</span>
+        <span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="n">path</span> <span class="o">/</span> <span class="s2">&quot;elements_metadata.json&quot;</span><span class="p">,</span> <span class="s2">&quot;w&quot;</span><span class="p">)</span> <span class="k">as</span> <span class="n">f</span><span class="p">:</span>
+            <span class="n">json</span><span class="o">.</span><span class="n">dump</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">elements_metadata</span><span class="p">,</span> <span class="n">f</span><span class="p">)</span>
+        <span class="k">for</span> <span class="n">scr</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">screenshots</span><span class="o">.</span><span class="n">values</span><span class="p">():</span>
+            <span class="n">scr</span><span class="o">.</span><span class="n">save</span><span class="p">(</span><span class="n">path</span><span class="p">)</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">mhtml_source</span><span class="p">:</span>
+            <span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="n">path</span> <span class="o">/</span> <span class="s2">&quot;page.mhtml&quot;</span><span class="p">,</span> <span class="s2">&quot;wb&quot;</span><span class="p">)</span> <span class="k">as</span> <span class="n">f</span><span class="p">:</span>  <span class="c1"># type: ignore</span>
+                <span class="n">f</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">mhtml_source</span><span class="p">)</span>  <span class="c1"># type: ignore</span></div></div>
+</pre></div>
+
+      </div>
+      <div class="bottomnav" role="navigation" aria-label="bottom navigation">
+      
+        <p>
+        <a class="uplink" href="../../index.html">Contents</a>
+        </p>
+
+      </div>
+
+    <div class="footer" role="contentinfo">
+        &#169; Copyright 2019 Klarna Bank AB (publ).
+      Created using <a href="http://sphinx-doc.org/">Sphinx</a> 2.0.1.
+    </div>
+  </body>
+</html>

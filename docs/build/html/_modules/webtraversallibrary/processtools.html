@@ -1,0 +1,126 @@
+
+<!DOCTYPE html>
+
+<html xmlns="http://www.w3.org/1999/xhtml">
+  <head>
+    <meta charset="utf-8" />
+    <title>webtraversallibrary.processtools &#8212; Web Traversal Framework  documentation</title>
+    <link rel="stylesheet" href="../../_static/haiku.css" type="text/css" />
+    <link rel="stylesheet" href="../../_static/pygments.css" type="text/css" />
+    <script type="text/javascript" id="documentation_options" data-url_root="../../" src="../../_static/documentation_options.js"></script>
+    <script type="text/javascript" src="../../_static/jquery.js"></script>
+    <script type="text/javascript" src="../../_static/underscore.js"></script>
+    <script type="text/javascript" src="../../_static/doctools.js"></script>
+    <script type="text/javascript" src="../../_static/language_data.js"></script>
+    <link rel="index" title="Index" href="../../genindex.html" />
+    <link rel="search" title="Search" href="../../search.html" /> 
+  </head><body>
+      <div class="header" role="banner"><h1 class="heading"><a href="../../index.html">
+          <span>Web Traversal Framework  documentation</span></a></h1>
+        <h2 class="heading"><span>webtraversallibrary.processtools</span></h2>
+      </div>
+      <div class="topnav" role="navigation" aria-label="top navigation">
+      
+        <p>
+        <a class="uplink" href="../../index.html">Contents</a>
+        </p>
+
+      </div>
+      <div class="content">
+        
+        
+  <h1>Source code for webtraversallibrary.processtools</h1><div class="highlight"><pre>
+<span></span><span class="c1"># Licensed to the Apache Software Foundation (ASF) under one</span>
+<span class="c1"># or more contributor license agreements.  See the NOTICE file</span>
+<span class="c1"># distributed with this work for additional information</span>
+<span class="c1"># regarding copyright ownership.  The ASF licenses this file</span>
+<span class="c1"># to you under the Apache License, Version 2.0 (the</span>
+<span class="c1"># &quot;License&quot;); you may not use this file except in compliance</span>
+<span class="c1"># with the License.  You may obtain a copy of the License at</span>
+
+<span class="c1">#   http://www.apache.org/licenses/LICENSE-2.0</span>
+
+<span class="c1"># Unless required by applicable law or agreed to in writing,</span>
+<span class="c1"># software distributed under the License is distributed on an</span>
+<span class="c1"># &quot;AS IS&quot; BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY</span>
+<span class="c1"># KIND, either express or implied.  See the License for the</span>
+<span class="c1"># specific language governing permissions and limitations</span>
+<span class="c1"># under the License.</span>
+
+<span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">Module collecting helper functions for common processing tasks, such as muting stdout within a context.</span>
+<span class="sd">&quot;&quot;&quot;</span>
+
+<span class="kn">import</span> <span class="nn">logging</span>
+<span class="kn">import</span> <span class="nn">signal</span>
+
+<span class="n">logger</span> <span class="o">=</span> <span class="n">logging</span><span class="o">.</span><span class="n">getLogger</span><span class="p">(</span><span class="s2">&quot;wtl&quot;</span><span class="p">)</span>
+
+
+<div class="viewcode-block" id="cached_property"><a class="viewcode-back" href="../../webtraversallibrary.html#webtraversallibrary.processtools.cached_property">[docs]</a><span class="k">class</span> <span class="nc">cached_property</span><span class="p">:</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Decorator that caches a property return value and will return it on later calls.</span>
+<span class="sd">    Adapted from The Python Cookbok, 2nd edition.</span>
+
+<span class="sd">    .. note::</span>
+<span class="sd">        If you want to map different arguments to values, use `functools.lru_cache`!</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">method</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">method</span> <span class="o">=</span> <span class="n">method</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">name</span> <span class="o">=</span> <span class="n">method</span><span class="o">.</span><span class="vm">__name__</span>
+        <span class="bp">self</span><span class="o">.</span><span class="vm">__doc__</span> <span class="o">=</span> <span class="n">method</span><span class="o">.</span><span class="vm">__doc__</span>
+
+    <span class="k">def</span> <span class="fm">__get__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">inst</span><span class="p">,</span> <span class="bp">cls</span><span class="p">):</span>
+        <span class="k">if</span> <span class="n">inst</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">return</span> <span class="bp">self</span>
+        <span class="n">result</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">method</span><span class="p">(</span><span class="n">inst</span><span class="p">)</span>
+        <span class="nb">object</span><span class="o">.</span><span class="fm">__setattr__</span><span class="p">(</span><span class="n">inst</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">name</span><span class="p">,</span> <span class="n">result</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">result</span></div>
+
+
+<div class="viewcode-block" id="TimeoutContext"><a class="viewcode-back" href="../../webtraversallibrary.html#webtraversallibrary.processtools.TimeoutContext">[docs]</a><span class="k">class</span> <span class="nc">TimeoutContext</span><span class="p">:</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Uses :mod:`signal` to raise TimeoutError within the block, if execution went over a specified timeout.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">n_seconds</span><span class="p">,</span> <span class="n">error_class</span><span class="o">=</span><span class="ne">TimeoutError</span><span class="p">):</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">n_seconds</span> <span class="o">=</span> <span class="n">n_seconds</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">error_cls</span> <span class="o">=</span> <span class="n">error_class</span>
+
+    <span class="k">def</span> <span class="fm">__enter__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">n_seconds</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="n">signal</span><span class="o">.</span><span class="n">signal</span><span class="p">(</span><span class="n">signal</span><span class="o">.</span><span class="n">SIGALRM</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">raise_error</span><span class="p">)</span>
+            <span class="n">signal</span><span class="o">.</span><span class="n">alarm</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">n_seconds</span><span class="p">)</span>
+            <span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;TimeoutContext: Operation timeout is set to </span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">n_seconds</span><span class="si">}</span><span class="s2"> sec.&quot;</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="fm">__exit__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">):</span>
+        <span class="c1"># Cancel the alarm</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">n_seconds</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="n">signal</span><span class="o">.</span><span class="n">signal</span><span class="p">(</span><span class="n">signal</span><span class="o">.</span><span class="n">SIGALRM</span><span class="p">,</span> <span class="n">signal</span><span class="o">.</span><span class="n">SIG_DFL</span><span class="p">)</span>
+            <span class="n">time_left</span> <span class="o">=</span> <span class="n">signal</span><span class="o">.</span><span class="n">alarm</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">time_left</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">:</span>
+                <span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;TimeoutContext: Operation finished without triggering the alarm (</span><span class="si">{</span><span class="n">time_left</span><span class="si">}</span><span class="s2"> sec. left)&quot;</span><span class="p">)</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="s2">&quot;TimeoutContext: Operation was interrupted by the timeout&quot;</span><span class="p">)</span>
+
+<div class="viewcode-block" id="TimeoutContext.raise_error"><a class="viewcode-back" href="../../webtraversallibrary.html#webtraversallibrary.processtools.TimeoutContext.raise_error">[docs]</a>    <span class="k">def</span> <span class="nf">raise_error</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">signal_num</span><span class="p">,</span> <span class="n">_</span><span class="p">):</span>
+        <span class="k">assert</span> <span class="n">signal_num</span> <span class="o">==</span> <span class="n">signal</span><span class="o">.</span><span class="n">SIGALRM</span>
+        <span class="k">raise</span> <span class="bp">self</span><span class="o">.</span><span class="n">error_cls</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Operation timed out after </span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">n_seconds</span><span class="si">}</span><span class="s2"> sec.&quot;</span><span class="p">)</span></div></div>
+</pre></div>
+
+      </div>
+      <div class="bottomnav" role="navigation" aria-label="bottom navigation">
+      
+        <p>
+        <a class="uplink" href="../../index.html">Contents</a>
+        </p>
+
+      </div>
+
+    <div class="footer" role="contentinfo">
+        &#169; Copyright 2019 Klarna Bank AB (publ).
+      Created using <a href="http://sphinx-doc.org/">Sphinx</a> 2.0.1.
+    </div>
+  </body>
+</html>
